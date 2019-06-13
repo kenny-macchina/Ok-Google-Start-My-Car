@@ -43,7 +43,7 @@ void setup()
   delay(3000);
   avgIdle=avgBatteryVoltage(3000);
 
-  /*if((avgIdle-avgBat)<ALLOW_DELTA)//verify voltage data
+  if((avgIdle-avgBat)<ALLOW_DELTA)//verify voltage data
   {
     SerialUSB.println("Idle and battery voltage too close, terminating");
     while(true)
@@ -52,7 +52,7 @@ void setup()
       digitalWrite(GREEN_LED, !digitalRead(GREEN_LED));
       delay(100);
     }
-  }*/
+  }
 
   SerialUSB.println("Setup complete");
 }
@@ -75,12 +75,12 @@ void loop()
   }
 }
 
-void startCarSpecific()//unique to make, model, year
+void startCarSpecific()//unique to make, model, year?
 {
   //code to start car
 }
 
-void stopCarSpecific()//unique to make, model, year
+void stopCarSpecific()//unique to make, model, year?
 {
   //code to stop car
 }
@@ -101,7 +101,7 @@ void startCar(bool forceTime, bool forceCheck)
   
     startCarSpecific();//run the start code specific to the car being used
     
-    /*delay(3000);
+    delay(3000);
     if(!forceCheck && !carRunning())//check if car is running after sending start command
     {
       while(true)//error, lock into holding pattern
@@ -110,7 +110,7 @@ void startCar(bool forceTime, bool forceCheck)
         digitalWrite(GREEN_LED, !digitalRead(GREEN_LED));
         delay(100);
       }
-    }*/
+    }
     
     digitalWrite(LED_BUILTIN, LOW);
     lastAction=millis();
@@ -147,7 +147,7 @@ void stopCar(bool forceTime, bool forceCheck)
   
     stopCarSpecific();//run the stop code specific to the car being used
 
-    /*delay(3000);
+    delay(3000);
     if(!forceCheck && carRunning())//check if car is still running after sending stop command
     {
       while(true)//error, lock into holding pattern
@@ -156,7 +156,7 @@ void stopCar(bool forceTime, bool forceCheck)
         digitalWrite(GREEN_LED, !digitalRead(GREEN_LED));
         delay(100);
       }
-    }*/
+    }
     
     digitalWrite(LED_BUILTIN, HIGH);
     lastAction=millis();
@@ -194,7 +194,7 @@ float avgBatteryVoltage(unsigned long timespan)//returns the average battery vol
 
   while((millis()-startTime)<timespan)
   {
-    sum++;//=readBatteryVoltage();
+    sum+=readBatteryVoltage();
     dataPoints++;
     delay(1);
   }
@@ -208,7 +208,7 @@ float readBatteryVoltage()//returns the battery voltage, known good
   voltage=voltage/1000;
   voltage=.1795*voltage*voltage-2.2321*voltage+14.596;//calibration curve determined with DSO, assumed good
 
-  //additional correction for M2 V4
+  //additional correction for M2 V4, comment out line below for V3 or earlier
   voltage=-.0168*voltage*voltage+1.003*voltage+1.3199;//calibration curve determined with DMM, assumed good (M2 V4 only!)
 
   return voltage;
