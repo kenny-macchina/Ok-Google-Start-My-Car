@@ -1,3 +1,8 @@
+//Macchina LLC
+//Kenny Truong
+//kenny@macchina.cc
+//6-13-19
+
 #include <WiFi.h>
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
