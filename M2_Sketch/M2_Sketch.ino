@@ -1,3 +1,8 @@
+//Macchina LLC
+//Kenny Truong
+//kenny@macchina.cc
+//6-13-19
+
 #include <pwm_defs.h>
 #include <pwm_lib.h>
 
