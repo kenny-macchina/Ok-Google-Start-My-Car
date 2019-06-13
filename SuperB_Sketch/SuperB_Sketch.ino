@@ -2,12 +2,12 @@
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
 
-#define WLAN_SSID       "Pretty_Fly_for_a_Wi-Fi"
-#define WLAN_PASS       "Minnesotahardware2468"
+#define WLAN_SSID       "Your SSID Here"
+#define WLAN_PASS       "Your Network Password Here"
 #define AIO_SERVER      "io.adafruit.com"
 #define AIO_SERVERPORT  1883                  
-#define AIO_USERNAME    "kenny_macchina"
-#define AIO_KEY         "005f571125e04778949c5706cda09ce3"
+#define AIO_USERNAME    "Your Adafuit IO Username Here"
+#define AIO_KEY         "Your Adafruit IO Password Here"
 
 int output=26;
 
