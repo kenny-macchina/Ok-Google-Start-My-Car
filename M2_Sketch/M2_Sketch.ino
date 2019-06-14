@@ -3,11 +3,24 @@
 //kenny@macchina.cc
 //6-14-19
 
-#include <mcp_can.h>
 #include <SPI.h>
-#include "SamNonDuePin.h"
+#include <MCP2515_sw_can.h>
 
-SWcan SW_CAN(SPI_CS_PIN);
+// Pin definitions specific to how the MCP2515 is wired up.
+#ifdef MACCHINA_M2
+#define CS_PIN  SPI0_CS3
+#define INT_PIN SWC_INT
+#else
+#define CS_PIN  34
+#define INT_PIN 38
+#endif
+
+// Create CAN object with pins as defined
+SWcan SCAN(CS_PIN, INT_PIN);
+
+void CANHandler() {
+  SCAN.intHandler();
+}
 
 #include <pwm_defs.h>
 #include <pwm_lib.h>
@@ -44,6 +57,22 @@ void setup()
 
   M2IO.Init_12VIO();//initialize 12VIO object
 
+  // Set up SPI Communication
+  // dataMode can be SPI_MODE0 or SPI_MODE3 only for MCP2515
+  SPI.setClockDivider(SPI_CLOCK_DIV2);
+  SPI.setDataMode(SPI_MODE0);
+  SPI.setBitOrder(MSBFIRST);
+  SPI.begin();
+  
+  // Initialize MCP2515 CAN controller at the specified speed and clock frequency
+  // (Note:  This is the oscillator attached to the MCP2515, not the Arduino oscillator)
+  //speed in KHz, clock in MHz
+  SCAN.setupSW(33);
+  
+  attachInterrupt(INT_PIN, CANHandler, FALLING);
+  SCAN.InitFilters(true);
+    SCAN.mode(3); //3 = Normal, 2 = HV Wake up, 1 = High Speed, 0 = Sleep
+
   avgBat=avgBatteryVoltage(3000);//measure battery voltage and idle voltage
   startCar(true);
   delay(3000);
@@ -63,6 +92,8 @@ void setup()
   SerialUSB.println("Setup complete");
 }
 
+byte i=0;
+
 void loop()
 {
   while(!carRunning())//watch for command to start car while car is not running
@@ -81,39 +112,99 @@ void loop()
   }
 }
 
-unsigned char wake[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-unsigned char initalize[8] = {0x01, 0x14, 0x00, 0x00, 0x23, 0x40, 0x05, 0x03};
-unsigned char startup[3] = {0x00, 0xFF, 0x0A};
-unsigned char stopdown[2] = {0x02, 0x0C};
-unsigned char lockmsg[2] = {0x02, 0x01};
-unsigned char unlockmsg[2] = {0x02, 0x03};
+CAN_FRAME message;
 
 void startCarSpecific()//chevy code
 {
-  SW_CAN.mode(2);   // High voltage wakup
-  delay(500);
-  SW_CAN.sendMsgBuf(0x100, 0, 8, wake);  // send 11-bit non-extended messege
-  delay(500);
-  SW_CAN.sendMsgBuf(0x638, 0, 8, initalize);
-  delay(500);
-  SW_CAN.mode(3);   // go to Normal mode
-  delay(500);
-  SW_CAN.sendMsgBuf(0x044097, 1, 3, startup);  // send 29-bit extended messege
-  delay(500);
+  SCAN.mode(2);
+  message.id = 0x100;//wake
+  message.rtr = 0;
+  message.extended = 0;
+  message.length = 8;
+  message.data.byte[0] = 0x00;
+  message.data.byte[1] = 0x00;
+  message.data.byte[2] = 0x00;
+  message.data.byte[3] = 0x00;
+  message.data.byte[4] = 0x00;
+  message.data.byte[5] = 0x00;
+  message.data.byte[6] = 0x00;
+  message.data.byte[7] = 0x00;
+  SCAN.EnqueueTX(message);
+  delay(2000);
+  
+  message.id = 0x638;//initialize
+  message.rtr = 0;
+  message.extended = 0;
+  message.length = 8;
+  message.data.byte[0] = 0x01;
+  message.data.byte[1] = 0x14;
+  message.data.byte[2] = 0x00;
+  message.data.byte[3] = 0x00;
+  message.data.byte[4] = 0x23;
+  message.data.byte[5] = 0x40;
+  message.data.byte[6] = 0x05;
+  message.data.byte[7] = 0x03;
+  SCAN.EnqueueTX(message);
+  delay(2000);
+
+  SCAN.mode(3);
+  message.id = 0x044097;//startup
+  message.rtr = 0;
+  message.extended = 1;
+  message.length = 3;
+  message.data.byte[0] = 0x00;
+  message.data.byte[1] = 0xFF;
+  message.data.byte[2] = 0x0A;
+  SCAN.EnqueueTX(message); //send it
+  delay(5); //wait a bit to make sure it was sent before ending HV Wake up
+  SCAN.mode(3); //go back to normal mode
+  delay(2000);
 }
 
 void stopCarSpecific()//chevy code
 {
-  SW_CAN.mode(2);   // High voltage wakup
-  delay(500);
-  SW_CAN.sendMsgBuf(0x100, 0, 8, wake);  // send 11-bit non-extended messege
-  delay(500);
-  SW_CAN.sendMsgBuf(0x638, 0, 8, initalize);
-  delay(500);
-  SW_CAN.mode(3);   // go to Normal mode
-  delay(500);
-  SW_CAN.sendMsgBuf(0x0080B0, 1, 2, stopdown);  // send 29-bit extended messege
-  delay(500);
+  SCAN.mode(2);
+  message.id = 0x100;//wake
+  message.rtr = 0;
+  message.extended = 0;
+  message.length = 8;
+  message.data.byte[0] = 0x00;
+  message.data.byte[1] = 0x00;
+  message.data.byte[2] = 0x00;
+  message.data.byte[3] = 0x00;
+  message.data.byte[4] = 0x00;
+  message.data.byte[5] = 0x00;
+  message.data.byte[6] = 0x00;
+  message.data.byte[7] = 0x00;
+  SCAN.EnqueueTX(message);
+  delay(2000);
+  
+  message.id = 0x638;//initialize
+  message.rtr = 0;
+  message.extended = 0;
+  message.length = 8;
+  message.data.byte[0] = 0x01;
+  message.data.byte[1] = 0x14;
+  message.data.byte[2] = 0x00;
+  message.data.byte[3] = 0x00;
+  message.data.byte[4] = 0x23;
+  message.data.byte[5] = 0x40;
+  message.data.byte[6] = 0x05;
+  message.data.byte[7] = 0x03;
+  SCAN.EnqueueTX(message);
+  delay(2000);
+
+  SCAN.mode(3);
+  message.id = 0x0080B0;//stopdown
+  message.rtr = 0;
+  message.extended = 1;
+  message.length = 2;
+  message.data.byte[0] = 0x02;
+  message.data.byte[1] = 0x0C;
+  SCAN.EnqueueTX(message); //send it
+  delay(5); //wait a bit to make sure it was sent before ending HV Wake up
+  SCAN.mode(3); //go back to normal mode
+  delay(2000);
 }
 
 void startCar(bool forceTime, bool forceCheck)
