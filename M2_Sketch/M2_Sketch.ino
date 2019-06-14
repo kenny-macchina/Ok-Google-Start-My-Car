@@ -1,7 +1,13 @@
 //Macchina LLC
 //Kenny Truong
 //kenny@macchina.cc
-//6-13-19
+//6-14-19
+
+#include <mcp_can.h>
+#include <SPI.h>
+#include "SamNonDuePin.h"
+
+SWcan SW_CAN(SPI_CS_PIN);
 
 #include <pwm_defs.h>
 #include <pwm_lib.h>
@@ -75,14 +81,39 @@ void loop()
   }
 }
 
-void startCarSpecific()//unique to make, model, year?
+unsigned char wake[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+unsigned char initalize[8] = {0x01, 0x14, 0x00, 0x00, 0x23, 0x40, 0x05, 0x03};
+unsigned char startup[3] = {0x00, 0xFF, 0x0A};
+unsigned char stopdown[2] = {0x02, 0x0C};
+unsigned char lockmsg[2] = {0x02, 0x01};
+unsigned char unlockmsg[2] = {0x02, 0x03};
+
+void startCarSpecific()//chevy code
 {
-  //code to start car
+  SW_CAN.mode(2);   // High voltage wakup
+  delay(500);
+  SW_CAN.sendMsgBuf(0x100, 0, 8, wake);  // send 11-bit non-extended messege
+  delay(500);
+  SW_CAN.sendMsgBuf(0x638, 0, 8, initalize);
+  delay(500);
+  SW_CAN.mode(3);   // go to Normal mode
+  delay(500);
+  SW_CAN.sendMsgBuf(0x044097, 1, 3, startup);  // send 29-bit extended messege
+  delay(500);
 }
 
-void stopCarSpecific()//unique to make, model, year?
+void stopCarSpecific()//chevy code
 {
-  //code to stop car
+  SW_CAN.mode(2);   // High voltage wakup
+  delay(500);
+  SW_CAN.sendMsgBuf(0x100, 0, 8, wake);  // send 11-bit non-extended messege
+  delay(500);
+  SW_CAN.sendMsgBuf(0x638, 0, 8, initalize);
+  delay(500);
+  SW_CAN.mode(3);   // go to Normal mode
+  delay(500);
+  SW_CAN.sendMsgBuf(0x0080B0, 1, 2, stopdown);  // send 29-bit extended messege
+  delay(500);
 }
 
 void startCar(bool forceTime, bool forceCheck)
