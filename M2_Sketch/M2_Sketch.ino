@@ -1,7 +1,7 @@
 //Macchina LLC
 //Kenny Truong
 //kenny@macchina.cc
-//6-14-19
+//6-17-19
 
 #include <SPI.h>
 #include <MCP2515_sw_can.h>
@@ -51,9 +51,14 @@ void setup()
   pinMode(GREEN_LED, OUTPUT);
   pinMode(LED_BUILTIN, OUTPUT);
 
+  pinMode(Button1, INPUT_PULLUP);//initialize button inputs
+  pinMode(Button2, INPUT_PULLUP);
+
   digitalWrite(RED_LED, HIGH);//turn off LED outputs
   digitalWrite(GREEN_LED, HIGH);
   digitalWrite(LED_BUILTIN, HIGH);
+
+  SerialUSB.println("I/O initialized");
 
   M2IO.Init_12VIO();//initialize 12VIO object
 
@@ -73,20 +78,18 @@ void setup()
   SCAN.InitFilters(true);
     SCAN.mode(3); //3 = Normal, 2 = HV Wake up, 1 = High Speed, 0 = Sleep
 
-  avgBat=avgBatteryVoltage(3000);//measure battery voltage and idle voltage
+  SerialUSB.println("Measuring battery voltage");//measure battery voltage and idle voltage
+  avgBat=avgBatteryVoltage(3000);
   startCar(true);
   delay(3000);
+  SerialUSB.println("Measuring idle voltage");
   avgIdle=avgBatteryVoltage(3000);
 
+  SerialUSB.println("Verifying voltage data");
   if((avgIdle-avgBat)<ALLOW_DELTA)//verify voltage data
   {
-    SerialUSB.println("Idle and battery voltage too close, terminating");
-    while(true)
-    {
-      digitalWrite(RED_LED, !digitalRead(RED_LED));
-      digitalWrite(GREEN_LED, !digitalRead(GREEN_LED));
-      delay(100);
-    }
+    SerialUSB.println("Idle and battery voltage too close, freezing");
+    freeze();
   }
 
   SerialUSB.println("Setup complete");
@@ -114,8 +117,10 @@ void loop()
 
 CAN_FRAME message;
 
-void startCarSpecific()//chevy code
+void startCarSpecific()//GM, chevy code
 {
+  SerialUSB.println("Calling startCarSpecific()");
+
   SCAN.mode(2);
   message.id = 0x100;//wake
   message.rtr = 0;
@@ -161,8 +166,10 @@ void startCarSpecific()//chevy code
   delay(2000);
 }
 
-void stopCarSpecific()//chevy code
+void stopCarSpecific()//GM, chevy code
 {
+  SerialUSB.println("Calling stopCarSpecific()");
+
   SCAN.mode(2);
   message.id = 0x100;//wake
   message.rtr = 0;
@@ -207,12 +214,17 @@ void stopCarSpecific()//chevy code
   delay(2000);
 }
 
+//attempt to start the car
+//if forceTime=false, time since last action must be greater than MIN_PERIOD
+//if forceCheck=false, program will freeze after starting car and detecting car did not start
+//true values bypass checks
 void startCar(bool forceTime, bool forceCheck)
 {
   SerialUSB.println("Calling startCar() with forceTime="+String(forceTime)+", forceCheck="+String(forceCheck));
   
-  if(forceTime || (millis()-lastAction)>MIN_PERIOD)
+  if(forceTime || (millis()-lastAction)>MIN_PERIOD)//TIMECHECK: time since last action must be greater than MIN_PERIOD or forceTime must be true
   {
+    SerialUSB.println("TIMECHECK passed");
     for(int i=0; i<3; i++)
     {
       digitalWrite(GREEN_LED, LOW);
@@ -224,22 +236,21 @@ void startCar(bool forceTime, bool forceCheck)
     startCarSpecific();//run the start code specific to the car being used
     
     delay(3000);
-    if(!forceCheck && !carRunning())//check if car is running after sending start command
+    SerialUSB.println("startCarSpecific() called, checking if car is running");
+    if(!forceCheck && !carRunning())//RUNCHECK: car must be running after calling startCarSpecific() or forceCheck must be true
     {
-      while(true)//error, lock into holding pattern
-      {
-        digitalWrite(RED_LED, !digitalRead(RED_LED));
-        digitalWrite(GREEN_LED, !digitalRead(GREEN_LED));
-        delay(100);
-      }
+      SerialUSB.println("Car not running, freezing program");
+      freeze();
     }
+    SerialUSB.println("RUNCHECK passed");
     
     digitalWrite(LED_BUILTIN, LOW);
     lastAction=millis();
+    SerialUSB.println("Exiting startCar()");
   }
   else
   {
-    SerialUSB.println("Acion frequency too high!");
+    SerialUSB.println("Action frequency too high!");
   }
 }
 
@@ -253,12 +264,17 @@ void startCar()
   startCar(false, false);
 }
 
+//attempt to stop the car
+//if forceTime=false, time since last action must be greater than MIN_PERIOD
+//if forceCheck=false, program will freeze after starting car and detecting car did not start
+//true values bypass checks
 void stopCar(bool forceTime, bool forceCheck)
 {
   SerialUSB.println("Calling stopCar() with forceTime="+String(forceTime)+", forceCheck="+String(forceCheck));
   
-  if(forceTime || (millis()-lastAction)>MIN_PERIOD)
+  if(forceTime || (millis()-lastAction)>MIN_PERIOD)//TIMECHECK: time since last action must be greater than MIN_PERIOD or forceTime must be true
   {
+    SerialUSB.println("TIMECHECK passed");
     for(int i=0; i<3; i++)
     {
       digitalWrite(RED_LED, LOW);
@@ -270,18 +286,16 @@ void stopCar(bool forceTime, bool forceCheck)
     stopCarSpecific();//run the stop code specific to the car being used
 
     delay(3000);
-    if(!forceCheck && carRunning())//check if car is still running after sending stop command
+    SerialUSB.println("stopCarSpecific() called, checking if car is stopped");
+    if(!forceCheck && carRunning())//RUNCHECK: car must be stopped after calling stopCarSpecific() or forceCheck must be true
     {
-      while(true)//error, lock into holding pattern
-      {
-        digitalWrite(RED_LED, !digitalRead(RED_LED));
-        digitalWrite(GREEN_LED, !digitalRead(GREEN_LED));
-        delay(100);
-      }
+      SerialUSB.println("Car still running, freezing program");
+      freeze();
     }
     
     digitalWrite(LED_BUILTIN, HIGH);
     lastAction=millis();
+    SerialUSB.println("Exiting stopCar()");
   }
   else
   {
@@ -301,7 +315,7 @@ void stopCar()
 
 bool carRunning()//determine whether the car is running by measuring the voltage
 {
-  float currentVoltage=readBatteryVoltage();
+  float currentVoltage=avgBatteryVoltage(10);
   float threshold=(avgBat+avgIdle)/2;
 
   return currentVoltage>threshold;
@@ -334,4 +348,40 @@ float readBatteryVoltage()//returns the battery voltage, known good
   voltage=-.0168*voltage*voltage+1.003*voltage+1.3199;//calibration curve determined with DMM, assumed good (M2 V4 only!)
 
   return voltage;
+}
+
+void freeze()//freeze the program and flash the LEDs to indicate a problem has occured, thaw and return to program by simultaneously pressing SW1 and SW2
+{
+  SerialUSB.println("Entering freeze()");
+
+  unsigned long lastTime=millis();
+  unsigned long period=200;
+  period=period/2;
+
+  bool thaw=false;
+  while(!thaw)
+  {
+    digitalWrite(RED_LED, !digitalRead(RED_LED));
+    digitalWrite(GREEN_LED, !digitalRead(GREEN_LED));
+    
+    while((millis()-lastTime)<period)
+    {
+      if(digitalRead(Button1)==LOW && digitalRead(Button2)==LOW)
+      {
+        thaw=true;
+      }
+    }
+    lastTime=millis();
+  }
+
+  digitalWrite(RED_LED, HIGH);
+  digitalWrite(GREEN_LED, HIGH);
+
+  SerialUSB.println("Thawing...");
+  SerialUSB.println("3...");
+  delay(1000);
+  SerialUSB.println("2...");
+  delay(1000);
+  SerialUSB.println("1...");
+  delay(1000);
 }
