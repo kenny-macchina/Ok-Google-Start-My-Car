@@ -1,7 +1,12 @@
 //Macchina LLC
 //Kenny Truong
 //kenny@macchina.cc
-//6-17-19
+//8-15-19
+
+//double press button 1 to send start code without HV wake
+//single press button 1 to send start code with HV wake
+//double press button 2 to send stop code without HV wake
+//single press button 2 to send stop code with HV wake
 
 #include <SPI.h>
 #include <MCP2515_sw_can.h>
@@ -28,6 +33,11 @@ void CANHandler() {
 #include <Debounce.h>
 #include <M2_12VIO.h>
 
+CAN_FRAME wakeMessage;
+CAN_FRAME initializeMessage;
+CAN_FRAME startupMessage;
+CAN_FRAME stopdownMessage;
+
 M2_12VIO M2IO;
 
 const byte RED_LED=14;
@@ -43,6 +53,47 @@ float avgIdle=0;
 
 void setup()
 {
+  wakeMessage.id=0x100;
+  wakeMessage.rtr=0;
+  wakeMessage.extended=0;
+  wakeMessage.length=8;
+  wakeMessage.data.byte[0]=0x00;
+  wakeMessage.data.byte[1]=0x00;
+  wakeMessage.data.byte[2]=0x00;
+  wakeMessage.data.byte[3]=0x00;
+  wakeMessage.data.byte[4]=0x00;
+  wakeMessage.data.byte[5]=0x00;
+  wakeMessage.data.byte[6]=0x00;
+  wakeMessage.data.byte[7]=0x00;
+  
+  initializeMessage.id=0x638;
+  initializeMessage.rtr=0;
+  initializeMessage.extended=0;
+  initializeMessage.length=8;
+  initializeMessage.data.byte[0]=0x01;
+  initializeMessage.data.byte[1]=0x14;
+  initializeMessage.data.byte[2]=0x00;
+  initializeMessage.data.byte[3]=0x00;
+  initializeMessage.data.byte[4]=0x23;
+  initializeMessage.data.byte[5]=0x40;
+  initializeMessage.data.byte[6]=0x05;
+  initializeMessage.data.byte[7]=0x03;
+  
+  startupMessage.id=0x044097;
+  startupMessage.rtr=0;
+  startupMessage.extended=1;
+  startupMessage.length=3;
+  startupMessage.data.byte[0]=0x00;
+  startupMessage.data.byte[1]=0xFF;
+  startupMessage.data.byte[2]=0x0A;
+  
+  stopdownMessage.id=0x0080B0;
+  stopdownMessage.rtr=0;
+  stopdownMessage.extended=1;
+  stopdownMessage.length=2;
+  stopdownMessage.data.byte[0]=0x02;
+  stopdownMessage.data.byte[1]=0x0C;
+  
   SerialUSB.begin(115200);
   
   pinMode(XBEE_MULT2, INPUT);//initialize input from SuperB
@@ -78,19 +129,19 @@ void setup()
   SCAN.InitFilters(true);
     SCAN.mode(3); //3 = Normal, 2 = HV Wake up, 1 = High Speed, 0 = Sleep
 
-  SerialUSB.println("Measuring battery voltage");//measure battery voltage and idle voltage
-  avgBat=avgBatteryVoltage(3000);
-  startCar(true);
-  delay(3000);
-  SerialUSB.println("Measuring idle voltage");
-  avgIdle=avgBatteryVoltage(3000);
-
-  SerialUSB.println("Verifying voltage data");
-  if((avgIdle-avgBat)<ALLOW_DELTA)//verify voltage data
-  {
-    SerialUSB.println("Idle and battery voltage too close, freezing");
-    freeze();
-  }
+//  SerialUSB.println("Measuring battery voltage");//measure battery voltage and idle voltage
+//  avgBat=avgBatteryVoltage(3000);
+//  startCar(true);
+//  delay(3000);
+//  SerialUSB.println("Measuring idle voltage");
+//  avgIdle=avgBatteryVoltage(3000);
+//
+//  SerialUSB.println("Verifying voltage data");
+//  if((avgIdle-avgBat)<ALLOW_DELTA)//verify voltage data
+//  {
+//    SerialUSB.println("Idle and battery voltage too close, freezing");
+//    freeze();
+//  }
 
   SerialUSB.println("Setup complete");
 }
@@ -99,70 +150,76 @@ byte i=0;
 
 void loop()
 {
-  while(!carRunning())//watch for command to start car while car is not running
+  if(digitalRead(Button1)==LOW)
   {
-    if(digitalRead(XBEE_MULT2)==HIGH)
+    while(digitalRead(Button1)==LOW)
+      delay(10);
+
+    unsigned long buttonTime=millis();
+    bool doublePress=false;
+    while((millis()-buttonTime)<750)
+      if(digitalRead(Button1)==LOW)
+        doublePress=true;
+
+    if(doublePress)
     {
-      startCar();
+      digitalWrite(GREEN_LED, LOW);
+      delay(100);
+      digitalWrite(GREEN_LED, HIGH);
+
+      startCarNoWake();
+      digitalWrite(LED_BUILTIN, LOW);
     }
+    else
+    {
+      startCar(true);
+    }
+    while(digitalRead(Button1)==LOW)
+      delay(25);
   }
-  while(carRunning())//watch for command to stop car while car is running
+  
+  if(digitalRead(Button2)==LOW)
   {
-    if(digitalRead(XBEE_MULT2)==LOW)
+    while(digitalRead(Button2)==LOW)
+      delay(10);
+
+    unsigned long buttonTime=millis();
+    bool doublePress=false;
+    while((millis()-buttonTime)<750)
+      if(digitalRead(Button2)==LOW)
+        doublePress=true;
+
+    if(doublePress)
     {
-      stopCar();
+      digitalWrite(RED_LED, LOW);
+      delay(100);
+      digitalWrite(RED_LED, HIGH);
+
+      stopCarNoWake();
+      digitalWrite(LED_BUILTIN, HIGH);
     }
+    else
+    {
+      stopCar(true);
+    }
+    while(digitalRead(Button2)==LOW)
+      delay(25);
   }
 }
-
-CAN_FRAME message;
 
 void startCarSpecific()//GM, chevy code
 {
   SerialUSB.println("Calling startCarSpecific()");
-
+  
   SCAN.mode(2);
   delay(500);
-  message.id = 0x100;//wake
-  message.rtr = 0;
-  message.extended = 0;
-  message.length = 8;
-  message.data.byte[0] = 0x00;
-  message.data.byte[1] = 0x00;
-  message.data.byte[2] = 0x00;
-  message.data.byte[3] = 0x00;
-  message.data.byte[4] = 0x00;
-  message.data.byte[5] = 0x00;
-  message.data.byte[6] = 0x00;
-  message.data.byte[7] = 0x00;
-  SCAN.EnqueueTX(message);
+  SCAN.EnqueueTX(wakeMessage);
   delay(500);
-  
-  message.id = 0x638;//initialize
-  message.rtr = 0;
-  message.extended = 0;
-  message.length = 8;
-  message.data.byte[0] = 0x01;
-  message.data.byte[1] = 0x14;
-  message.data.byte[2] = 0x00;
-  message.data.byte[3] = 0x00;
-  message.data.byte[4] = 0x23;
-  message.data.byte[5] = 0x40;
-  message.data.byte[6] = 0x05;
-  message.data.byte[7] = 0x03;
-  SCAN.EnqueueTX(message);
+  SCAN.EnqueueTX(initializeMessage);
   delay(500);
-
   SCAN.mode(3);
   delay(500);
-  message.id = 0x044097;//startup
-  message.rtr = 0;
-  message.extended = 1;
-  message.length = 3;
-  message.data.byte[0] = 0x00;
-  message.data.byte[1] = 0xFF;
-  message.data.byte[2] = 0x0A;
-  SCAN.EnqueueTX(message); //send it
+  SCAN.EnqueueTX(startupMessage);
   delay(500);
 }
 
@@ -172,48 +229,39 @@ void stopCarSpecific()//GM, chevy code
 
   SCAN.mode(2);
   delay(500);
-  message.id = 0x100;//wake
-  message.rtr = 0;
-  message.extended = 0;
-  message.length = 8;
-  message.data.byte[0] = 0x00;
-  message.data.byte[1] = 0x00;
-  message.data.byte[2] = 0x00;
-  message.data.byte[3] = 0x00;
-  message.data.byte[4] = 0x00;
-  message.data.byte[5] = 0x00;
-  message.data.byte[6] = 0x00;
-  message.data.byte[7] = 0x00;
-  SCAN.EnqueueTX(message);
+  SCAN.EnqueueTX(wakeMessage);
   delay(500);
-  
-  message.id = 0x638;//initialize
-  message.rtr = 0;
-  message.extended = 0;
-  message.length = 8;
-  message.data.byte[0] = 0x01;
-  message.data.byte[1] = 0x14;
-  message.data.byte[2] = 0x00;
-  message.data.byte[3] = 0x00;
-  message.data.byte[4] = 0x23;
-  message.data.byte[5] = 0x40;
-  message.data.byte[6] = 0x05;
-  message.data.byte[7] = 0x03;
-  SCAN.EnqueueTX(message);
+  SCAN.EnqueueTX(initializeMessage);
   delay(500);
-
   SCAN.mode(3);
   delay(500);
-  message.id = 0x0080B0;//stopdown
-  message.rtr = 0;
-  message.extended = 1;
-  message.length = 2;
-  message.data.byte[0] = 0x02;
-  message.data.byte[1] = 0x0C;
-  SCAN.EnqueueTX(message); //send it
+  SCAN.EnqueueTX(stopdownMessage);
   delay(500);
 }
 
+void startCarNoWake()//send start code without HV wake
+{
+  SCAN.mode(2);
+  delay(500);
+  SCAN.EnqueueTX(initializeMessage);
+  delay(500);
+  SCAN.mode(3);
+  delay(500);
+  SCAN.EnqueueTX(startupMessage);
+  delay(500);
+}
+
+void stopCarNoWake()//send stop code without HV wake
+{
+  SCAN.mode(2);
+  delay(500);
+  SCAN.EnqueueTX(initializeMessage);
+  delay(500);
+  SCAN.mode(3);
+  delay(500);
+  SCAN.EnqueueTX(stopdownMessage);
+  delay(500);
+}
 //attempt to start the car
 //if forceTime=false, time since last action must be greater than MIN_PERIOD
 //if forceCheck=false, program will freeze after starting car and detecting car did not start
